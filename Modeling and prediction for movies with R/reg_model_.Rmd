@@ -1,0 +1,521 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+    
+
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+library(olsrr)
+library(kableExtra)
+library(gridExtra)
+```
+
+### Load data
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+The dataset for this research consists of 651 randomly sampled movies shot and released before 2016. It is collected from Rotten Tomatoes, an American review-aggregation website for films and televisions, and IMDB, an online database.
+
+### Generalization and causality
+
+The result of this research can be generalizable because random sampling is conducted while collecting data.
+
+However, since there is no random assignment in the data collection, we cannot conclude any causal relationship between responsive variables and explanatory variables.
+
+
+* * *
+
+## Part 2: Research question
+
+**Question:** Is it possible to predict the popularity of a movie, based on its features?
+
+For those who are interested in movie assessing, just as I am, the result of this research can give directions, through which the exploration of what causes a movie to be popular will become much easier.
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+  
+### 3.1 Data preperation
+&nbsp;
+
+#### 3.1.1 Definition of "popularity"
+
+The first crucial step of this research is to define the subjective conecpt "popularity".
+
+In this research, "popularity" is considered as the rating from the general public, which relates to `imdb_rating` and `audience_score`.
+
+- `imdb_rating`: Rating on IMDB (ranging from 0 to 10)
+- `audience_score`: Audience score on Rotten Tomatoes (ranging from 0 to 100)
+
+To quantify "popularity", a new variable `pop` is creatd by giving the same weight to both variables and then scaling `imdb_rating` to match `audience_score`.
+
+$$
+pop=imdb\_rating*10/2+audience\_score/2
+$$
+
+#### 3.1.2 Filtering explanatory variables
+
+The research has a few reasonable assumptions as follow, which can be lifted in further researches.
+
+- The title of the movie has no relation with popularity
+- The releasing dates of the movie and its DVD do not correlate popularity
+
+Considering that winning best actors, actresses, and the best director in Oscar reflects the impact of actors and directors , we rule out all the variables with the names of actors and directors .
+
+At last, we drop entries with null values and get a new dataset `mdb`.
+
+
+
+```{r}
+# Create a new dataset for the research
+mdb <- movies %>%
+  filter(!is.na(runtime)) %>%
+  mutate(pop=imdb_rating*5+audience_score/2) %>%
+  select(pop,runtime,critics_score,mpaa_rating,genre,best_pic_nom,best_pic_win,best_actor_win,best_actress_win,best_dir_win,top200_box)
+  
+```
+
+
+### 3.2 Exploratory Data Analysis 
+
+```{r}
+summary(mdb)
+```
+
+From the above summary, it is easy to group all the variables into two groups:
+
+**Numerical:**
+
+- `pop`: The popularity of a movie
+- `runtime`: Runtime of movie (in minutes)
+- `critics_score`: Critics score on Rotten Tomatoes
+
+
+**Categorical:**
+
+- `mpaa_rating`: MPAA rating of the movie (G, PG, PG-13, R, Unrated)
+- `genre`: Genre of movie (Action & Adventure, Comedy, Documentary, Drama, Horror, Mystery & Suspense, Other)
+- `best_pic_nom`: Whether or not the movie was nominated for a best picture Oscar (no, yes)
+- `best_pic_win`: Whether or not the movie won a best picture Oscar (no, yes)
+- `best_actor_win`: Whether or not one of the main actors in the movie ever won an Oscar (no, yes) – note that this is not necessarily whether the actor won an Oscar for their role in the given movie
+- `best_actress_win`: Whether or not one of the main actresses in the movie ever won an Oscar (no, yes) – not that this is not necessarily whether the actresses won an Oscar for their role in the given movie
+- `best_dir_win`: Whether or not the director of the movie ever won an Oscar (no, yes) – not that this is not necessarily whether the director won an Oscar for the given movie
+- `top200_box`: Whether or not the movie is in the Top 200 Box Office list on BoxOfficeMojo (no, yes)
+
+
+```{r}
+summary(mdb$pop)
+boxplot(mdb$pop,main="Boxplot of pop score",col="darkgray",horizontal = TRUE, notch= FALSE)
+```
+
+`pop` score ranges from 17.5 to 93.5. Its range is 76, even larger than the mean and median.
+
+Before modelling, we will first explore if numerical exlanatory variables are linear correlated with responsible variable `pop`.
+
+```{r}
+ggpairs(mdb, columns = c(1,2,3))
+```
+
+The above graphs indicate that there is a strong correlation between `critics_score` and `pop` while `runtime` is not strong related to `pop`, suggested by the correlation coefficent of 0.218. But from the scatterplot, the relationship between `runtime` and `pop` could still be considered weak linear.
+
+The long tail of the right skewed pattern of `runtime` distribution suggests that there may be a few extreme values.
+
+```{r}
+summary(mdb$runtime)
+boxplot(mdb$runtime, main="Boxplot of runtime")
+```
+
+This could be confirmed by the above summary and boxplot. However, we will not exclude these outliers in this research as we do not have strong evidence to rule them out.
+
+The correlation coefficient of `runtime` and `critics_score` is 0.172. This means that these two variables are independent of each other.
+
+It is logic to belive that the genre of a moive has no relationship with the popularity defined in this research because movies of each type only attract its target customers and the audience  will not rise or lower his or her rating simply because of its movie category. 
+
+```{r}
+# Calculate pop score by genre
+g_1 <-mdb %>%
+  group_by(genre) %>%
+  summarise(ave_pop=mean(pop)) 
+kable(g_1) %>%
+  kable_styling(bootstrap_options="striped", position="left", full_width = F)
+
+# Plot pop score by genre
+ggplot(data=g_1, aes(x=genre,y=ave_pop))+
+  geom_bar(stat="identity")+
+  ggtitle("Average popularity score by MPAA rating")+
+  geom_text(aes(label=round(ave_pop,2)),vjust=1.8, size=3, color="white")+
+  theme(plot.title = element_text(hjust=0.5, size=9), axis.text.x=element_text(angle=-75, hjust=0.1))+
+  labs(y="Average pop score", x="Genre")
+
+```
+
+
+However, both the table and the bar plot suggest that the average pop score varies by genre, with the documentary scoring 79.74, the highest rating, and horror scoring 51.72, the lowest rating.
+
+We will further explore how explanatory variables relate to responsive variable `pop`.
+
+
+* * *
+
+## Part 4: Modeling 
+
+Based on the EDA, which shows the linear relationship between the numerical explanatory variables and responsive variables, we will build a multiple linear regression model in this research.
+
+
+### 4.1 Model Selection {.tabset .tabset-fade .tabset-pills}
+
+Since the reliabity of the model prediction is most concerned, we prefer adjusted $R^2$ rather than p-value in model selection. To build a parsimonious model with backwards elimination, we will start with a full model. Then, creates new models by dropping one variable at a time. From all alternatives, we select the model with the highest increase in adjusted $R^2$ and drop variables to create a new group of model. The cycle will keep going until none of the models yield an increase in adjusted $R^2$ .
+
+
+#### Inital Model
+
+```{r}
+m_pop <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+summary(m_pop)
+
+```
+
+&nbsp;
+
+**Comments:** The adjusted $R^2$ for initial model is 0.5923. In the first round of elmination, we will look for models whose adjusted $R^2$ is larger than 0.5923.
+
+---
+
+#### Round 1
+
+```{r}
+m_1 <-lm(pop ~critics_score+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_2 <-lm(pop ~runtime+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_3 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_4 <-lm(pop ~runtime+critics_score+mpaa_rating+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_5 <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_6 <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_nom+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_7 <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_8 <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_9 <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actor_win+best_dir_win+top200_box, data=mdb)
+
+m_10 <-lm(pop ~runtime+critics_score+mpaa_rating+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win, data=mdb)
+
+colnm=c("runtime","critics_score","mpaa_rating","genre","best_pic_nom","best_pic_win","best_actor_win","best_actress_win","best_dir_win","top200_box")
+
+v=c(summary(m_1)$adj.r.squared,summary(m_2)$adj.r.squared,summary(m_3)$adj.r.squared,summary(m_4)$adj.r.squared,summary(m_5)$adj.r.squared,summary(m_6)$adj.r.squared,summary(m_7)$adj.r.squared,summary(m_8)$adj.r.squared,summary(m_9)$adj.r.squared,summary(m_10)$adj.r.squared)
+
+
+
+```
+
+```{r}
+kable(data.frame(Round1_Elimination=colnm,Adjusted_R_Squared=v)) %>%
+  kable_styling(bootstrap_options="striped", position="left", full_width = F)
+```
+
+**Round 1 Comments: **  The model dropping `mpaa_rating` has the highest adjusted $R^2$,that is,0.5930493. So we will use this model for the next round of elimination.
+
+---
+
+
+#### Round 2
+
+```{r}
+
+
+m_1 <-lm(pop ~critics_score+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_2 <-lm(pop ~runtime+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_3 <-lm(pop ~runtime+critics_score+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_4 <-lm(pop ~runtime+critics_score+genre+best_pic_win+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_5 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_6 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_pic_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_7 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_pic_win+best_actor_win+best_dir_win+top200_box, data=mdb)
+
+m_8 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+top200_box, data=mdb)
+
+m_9 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_pic_win+best_actor_win+best_actress_win+best_dir_win, data=mdb)
+
+colnm_2=c("runtime","critics_score","genre","best_pic_nom","best_pic_win","best_actor_win","best_actress_win","best_dir_win","top200_box")
+
+v_2=c(summary(m_1)$adj.r.squared,summary(m_2)$adj.r.squared,summary(m_3)$adj.r.squared,summary(m_4)$adj.r.squared,summary(m_5)$adj.r.squared,summary(m_6)$adj.r.squared,summary(m_7)$adj.r.squared,summary(m_8)$adj.r.squared,summary(m_9)$adj.r.squared)
+
+kable(data.frame(Round2_Elimination=colnm_2,Adjusted_R_Squared=v_2)) %>%
+  kable_styling(bootstrap_options="striped", position="left", full_width = F)
+
+```
+
+**Round 2 Comments:** Based on the table of adjusted $R^2$, we will choose the model ruling out `best_pic_win`.
+
+---
+
+
+#### Round 3
+
+```{r}
+
+m_1 <-lm(pop ~critics_score+genre+best_pic_nom+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_2 <-lm(pop ~runtime+genre+best_pic_nom+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_3 <-lm(pop ~runtime+critics_score+best_pic_nom+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_4 <-lm(pop ~runtime+critics_score+genre+best_actor_win+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_5 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_6 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actor_win+best_dir_win+top200_box, data=mdb)
+
+m_7 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actor_win+best_actress_win+top200_box, data=mdb)
+
+m_8 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actor_win+best_actress_win+best_dir_win, data=mdb)
+
+colnm_3=c("runtime","critics_score","genre","best_pic_nom","best_actor_win","best_actress_win","best_dir_win","top200_box")
+
+v_3=c(summary(m_1)$adj.r.squared,summary(m_2)$adj.r.squared,summary(m_3)$adj.r.squared,summary(m_4)$adj.r.squared,summary(m_5)$adj.r.squared,summary(m_6)$adj.r.squared,summary(m_7)$adj.r.squared,summary(m_8)$adj.r.squared)
+
+kable(data.frame(Round3_Elimination=colnm_3,Adjusted_R_Squared=v_3)) %>%
+    kable_styling(bootstrap_options="striped", position="left", full_width = F)
+
+```
+
+**Round 3 Comments: ** As elminating `best_actor_win` increases the adjusted $R^2$ to 0.5938480, we will drop `best_actor_win` in this round.
+
+---
+
+
+#### Round 4
+
+```{r}
+m_1 <-lm(pop ~critics_score+genre+best_pic_nom+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_2 <-lm(pop ~runtime+genre+best_pic_nom+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_3 <-lm(pop ~runtime+critics_score+best_pic_nom+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_4 <-lm(pop ~runtime+critics_score+genre+best_actress_win+best_dir_win+top200_box, data=mdb)
+
+m_5 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_dir_win+top200_box, data=mdb)
+
+m_6 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actress_win+top200_box, data=mdb)
+
+m_7 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actress_win+best_dir_win, data=mdb)
+
+colnm_4=c("runtime","critics_score","genre","best_pic_nom","best_actress_win","best_dir_win","top200_box")
+
+v_4=c(summary(m_1)$adj.r.squared,summary(m_2)$adj.r.squared,summary(m_3)$adj.r.squared,summary(m_4)$adj.r.squared,summary(m_5)$adj.r.squared,summary(m_6)$adj.r.squared,summary(m_7)$adj.r.squared)
+
+kable(data.frame(Round4_Elimination=colnm_4,Adjusted_R_Squared=v_4)) %>%
+    kable_styling(bootstrap_options="striped", position="left", full_width = F)
+
+```
+
+**Round 4 Comments: ** We will drop `best_dir_win` in this round.
+
+---
+
+
+#### Round 5
+
+```{r}
+m_1 <-lm(pop ~critics_score+genre+best_pic_nom+best_actress_win+top200_box, data=mdb)
+
+m_2 <-lm(pop ~runtime+genre+best_pic_nom+best_actress_win+top200_box, data=mdb)
+
+m_3 <-lm(pop ~runtime+critics_score+best_pic_nom+best_actress_win+top200_box, data=mdb)
+
+m_4 <-lm(pop ~runtime+critics_score+genre+best_actress_win+top200_box, data=mdb)
+
+m_5 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+top200_box, data=mdb)
+
+m_6 <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actress_win, data=mdb)
+
+
+
+colnm_5=c("runtime","critics_score","genre","best_pic_nom","best_actress_win","top200_box")
+
+v_5=c(summary(m_1)$adj.r.squared,summary(m_2)$adj.r.squared,summary(m_3)$adj.r.squared,summary(m_4)$adj.r.squared,summary(m_5)$adj.r.squared,summary(m_6)$adj.r.squared)
+
+kable(data.frame(Round5_Elimination=colnm_5,Adjusted_R_Squared=v_5))%>%
+    kable_styling(bootstrap_options="striped", position="left", full_width = F)
+```
+
+**Round 5 Comments: ** As none of the models yields an adjusted $R^2$ greater than 0.5944773 in this round, we will not drop any variable. The process of model selection will stop here.
+
+---
+
+
+### 4.2 Final Model
+
+```{r}
+m_final <-lm(pop ~runtime+critics_score+genre+best_pic_nom+best_actress_win+top200_box, data=mdb)
+summary(m_final)
+```
+
+The final model can be expressed in the following formula:
+
+$$\begin{align*}
+\hat{pop}=&35.573+0.064\,runtime+0.345\,critics\_score+ 2.369\,genre:Animation \\
+&+5.216\,genre:Art\>House\&International-0.909\,genre:Comedy\\
+&+8.174\,genre:Documentary+1.693\,genre:Drama-4.936\,genre:Horror\\
+&+7.264\,genre:Musical\>\&\>Performing\>Arts-1.264\,genre:Mystery\>\&\>Suspense\\
+&+0.621\,genre:Other-5.391\,genre:Science\>Fiction\>\&\>Fantasy+6.226\,best\_pic\_nomyes\\
+&-1.291\,best\_actress\_winyes+2.756\,top200\_boxyes
+\end{align*}$$
+
+**Interpretation of model coefficients**
+
+- Intercept: the pop score of a Action & Adventure movie with 0 `runtime`, 0 `critics_score`, not best picture nominated in Oscar, not winning best actress in Oscar, and not ranking among top 200 box office is expected to be 35.573.
+- `runtime`: All else held constant, for each 1 minute increase in `runtime` the model predicts the pop score to increase on average by 0.064.
+- `critics_score`: All else held constant, for each 1 increase in `critics_score` the model predicts the pop score to increase on average by 0.345.
+- `genre:Animation`: All else held constant, the pop score of an animation is expected to be 2.369 higher than an Action & Adventure.
+- `genre:ArtHouse&International`: All else held constant, the pop score of an Art House&International is expected to be 5.216 higher than an Action & Adventure.
+- `genre:Comedy`: All else held constant, the pop score of a comedy is expected to be 0.909 lower than an Action & Adventure.
+- `genre:Documentary`: All else held constant, the pop score of a documentary is expected to be 8.174 higher than an Action & Adventure.
+- `genre:Drama`: All else held constant, the pop score of a drama is expected to be 1.693 higher than an Action & Adventure.
+- `genre:Horror`: All else held constant, the pop score of a horror movie is expected to be 4.936 lower than an Action & Adventure.
+- `genre:Musical&Performing Arts`: All else held constant, the pop score of a Musical&Performing Arts is expected to be 7.264 higher than an Action & Adventure.
+- `genre:Mystery&Suspense`: All else held constant, the pop score of a Mystery&Suspense is expected to be 1.264 lower than an Action & Adventure.
+- `genre:Other`: All else held constant, the pop score of a movie in other category is expected to be 0.621 higher than an Action & Adventure.
+- `genre:Science Fiction&Fantasy`: All else held constant, the pop score of a movie -in Science, Fiction, and Fantasy category- is expected to be 5.391 lower than an Action & Adventure.
+- `best_pic_nomyes`: All else held constant, the pop score of a movie nominated the best picture in Oscar is expected to be 6.226 higher than those which do not.
+- `best_actress_winyes`: All else held constant, the pop score of a movie winning the best actress in Oscar is expected to be 1.291 lower than those which do not.
+- `top200_boxyes`: All else held constant, the pop score of a movie ranking among top 200 box office is expected to be 1.291 lower than those which do not.
+
+
+### 4.3 Model Diagnostics
+
+&nbsp;
+
+#### 4.3.1 Linearity
+
+```{r}
+ggplot(data=m_final, aes(x=runtime, y=.resid))+
+  geom_point()+
+  geom_hline(yintercept=0, linetype="dashed")+
+  labs(y="Residuals", title="Residuals versus runtime", x="Runtime")+
+  theme(plot.title = element_text(hjust=0.5))
+
+ggplot(data=m_final, aes(x=critics_score, y=.resid))+
+  geom_point()+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  labs(y="Residuals",title="Residuals versus critics score", x="Critics_score")+
+  theme(plot.title = element_text(hjust=0.5))
+
+```
+
+The scatterplots of numerical explanatory variables dand residuals both are randomly scattered around 0. The model meets the condition of linearity.
+
+&nbsp;
+
+#### 4.3.2 Nearly normal residuals
+
+```{r}
+ggplot(data=m_final, aes(x=.resid))+
+  geom_histogram(color="darkgray")+
+  labs(x="Residuals", title="Histogram of residuals", y="Counts")+
+  theme(plot.title=element_text(hjust=0.5))
+
+ggplot(data=m_final, aes(sample=.resid))+
+  stat_qq()+
+  labs(title="Normal probability plot of residuals")+
+  theme(plot.title=element_text(hjust=0.5))
+```
+
+The histogram of residuals is nearly normal distributed around 0. Except for the tail area, there is not much deviation in the normal probability plot. Therefore, we can confirm the nearly normal residuals.
+
+
+
+#### 4.3.3 Constant variability of residuals
+
+```{r}
+ggplot(data=m_final, aes(x=.fitted, y=.resid))+
+  geom_point()+
+  geom_hline(yintercept=0,linetype="dashed")+
+  labs(x="Predicted values", y="Residuals")
+```
+
+There is no fan shape in the scatterplot. The residuals are randomly scattered in a band around 0. 
+
+
+
+* * *
+
+## Part 5: Prediction
+
+In this section, we will use the model to predict the `pop` score of Kung Fu Panda 3 (2016) and quantify the prediction uncertain at a confidence level of 95%. The information of the movie is taken from IMDB and Rotten Tomatoes.
+
+```{r}
+# Input information of Kung Fu Panda 3 (2016)
+kp=data.frame(runtime=1*60+35,
+               critics_score=87,
+               genre="Animation",
+               best_pic_nom="no",
+               best_actress_win="no",
+               top200_box="no")
+```
+
+
+```{r}
+# Make a prediction
+predict(m_final, kp,interval = "prediction",level=0.95 )
+
+```
+
+The model predicts, with 95% confidence, that Kung Fu Panda 3, an animation with 95 minutes `runtime`, 87 `critics_score`, not nominated the best picture, not winning best actress, and not among top 200 box office, is expected to have a `pop`score from 54.160 to 93.923, and that its pop score is expected to be on average 74.04. 
+
+```{r}
+# The actual pop score
+real_pop=7.1*5+78/2
+real_pop
+```
+
+The actual `pop` score for Kung Fu Panda 3, which is 74.5, is in the 95% confidence interval and is close to the expected,average value.
+
+
+* * *
+
+## Part 6: Conclusion
+
+The answer to the research question is yes. We can use movies' runtime, critics score, genre, whether nominated in best picture and best actress in Oscar, and whether or not in top 200 box office to predict its popularity, which is gauged by the combination of IMDB rating and audience score from Rotten Tomatoes. Among explanatory variables, `critics_score` is a significant predictor. Even though the final model gives a decent prediction, the model has a few shortcomings 
+
+- The adjusted $R^2$ indicates only 59.45% of the variability in the `pop` score can be explained by the model. In terms of the adjusted $R^2$, the improvement of the final model, comparing with the initial full model, is subtle.
+
+- This research ignores that movies are usually categorized into more than one group. For example, Avengers: Endgame is considered action, adventure, and drama.
+
+For future research, in addition to addressing the shortcomings, we can use time series analysis to explore the pop score variation by movie releasing date and DVD releasing date.
+
