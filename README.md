@@ -7,4 +7,4 @@ This repository includes the data anlaysis projects in Python or R.
 
 ## Python
 
-Coming soon
+- [Fraud analytics](https://github.com/mybahub/Fraud_analytics) 
