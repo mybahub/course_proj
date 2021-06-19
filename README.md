@@ -1,10 +1,6 @@
-# course_proj
-This repository includes the data anlaysis projects in Python or R. 
+## Project List
 
-## R 
 
 - [Modeling and prediction for movies with R](https://rpubs.com/Mybahub/606498) 
 
-## Python
 
-- [Fraud analytics](https://github.com/mybahub/Fraud_analytics) 
